@@ -40,10 +40,21 @@
                     <option value="180">180 × 180（缩略图）</option><option value="360">360 × 360（中等预览）</option><option value="720" selected>720 × 720（高清预览）</option><option value="large">Large（大图预览，通常约 850px）</option><option value="original">Original（原图，流量较大）</option>
                 </select>
             </div>
-            <div class="form-group checkbox-group source-danbooru">
-                <input type="checkbox" id="danbooru_random" checked onchange="resetAndFetch()">
-                <label for="danbooru_random">随机排序 (Random)</label>
-                <span class="easter-trigger" onclick="handleEasterClick()">✨</span>
+            <div class="form-group source-danbooru random-options-group">
+                <div class="checkbox-group">
+                    <input type="checkbox" id="danbooru_random" checked onchange="onDanbooruRandomModeChange()">
+                    <label for="danbooru_random">随机排序 (Random)</label>
+                    <span class="easter-trigger" onclick="handleEasterClick()">✨</span>
+                </div>
+                <div class="random-strategy-block" id="danbooruRandomStrategyGroup" hidden>
+                    <div class="checkbox-group random-strategy-row">
+                        <input type="checkbox" id="danbooru_random_full" onchange="onDanbooruRandomModeChange()">
+                        <label for="danbooru_random_full">使用全随机
+                        <span class="tag-tooltip" data-tooltip="全随机：每条独立 /posts/random，更均匀但请求多、易限流。批量随机：随机页一次取多条，更快省配额，同页相关性略高。默认推荐批量随机。">ⓘ</span>
+                        </label>
+
+                    </div>
+                </div>
             </div>
             <div class="form-group tag-autocomplete-group">
                 <label for="tagInput" class="tag-label">
@@ -77,18 +88,18 @@
             </div>
             <div class="form-group source-danbooru">
                 <label>Danbooru 用户名 (Login)</label>
-                <input type="text" id="danbooru_login" placeholder="选填 (突破无Key标签限制)" onchange="resetAndFetch()">
+                <input type="text" id="danbooru_login" placeholder="选填 (突破无Key标签限制)" onchange="onDanbooruAuthChange()">
             </div>
             <div class="form-group source-danbooru">
                 <label>Danbooru API Key</label>
-                <input type="password" id="danbooru_apikey" placeholder="选填 (账户设置中获取)" onchange="resetAndFetch()">
+                <input type="password" id="danbooru_apikey" placeholder="选填 (账户设置中获取)" onchange="onDanbooruAuthChange()">
             </div>
         </div>
         <button id="fetchBtn" onclick="resetAndFetch()">应用配置并刷新</button>
         <div class="dict-admin-bar source-danbooru" id="dictAdminBar">
-          <span class="dict-admin-label">未翻译标签：<strong id="untranslatedCount">0</strong></span>
-          <button type="button" id="downloadUntranslatedBtn" class="btn-dict-admin" disabled title="下载 JSON，供 translation.py 读取并翻译">下载未翻译 JSON</button>
-          <button type="button" id="clearUntranslatedBtn" class="btn-dict-admin btn-dict-secondary" title="清空本地已收集的未翻译列表">清空</button>
+            <span class="dict-admin-label">未翻译标签：<strong id="untranslatedCount">0</strong></span>
+            <button type="button" id="downloadUntranslatedBtn" class="btn-dict-admin" disabled title="下载 JSON，供 translation.py 读取并翻译">下载未翻译 JSON</button>
+            <button type="button" id="clearUntranslatedBtn" class="btn-dict-admin btn-dict-secondary" title="清空本地已收集的未翻译列表">清空</button>
         </div>
     </div>
     <div class="gallery" id="gallery"></div>

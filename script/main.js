@@ -70,6 +70,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initSettingsPersistence();
     initTagAutocomplete();
     initUntranslatedTagsUI();
+    updateDanbooruRandomStrategyUI();
     setupColumns(true);
     fetchImages();
 });

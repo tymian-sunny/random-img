@@ -151,6 +151,61 @@ function shuffleDanbooruPosts(posts) {
     return posts;
 }
 
+/** 是否具备 Danbooru 认证（Login + API Key） */
+function hasDanbooruAuth() {
+    const login = document.getElementById('danbooru_login')?.value.trim();
+    const apiKey = document.getElementById('danbooru_apikey')?.value.trim();
+    return !!(login && apiKey);
+}
+
+/**
+ * 是否使用全随机（/posts/random）。
+ * 仅当：开启随机 + 已填 key + 用户勾选「使用全随机」时为 true。
+ * 默认（未勾选）走批量随机（随机页）。
+ */
+function useFullRandomStrategy() {
+    const randomEnabled = document.getElementById('danbooru_random')?.checked;
+    const fullRandom = document.getElementById('danbooru_random_full')?.checked;
+    return !!(randomEnabled && hasDanbooruAuth() && fullRandom);
+}
+
+/** 根据「随机排序 / 是否填 key」显示策略开关，并更新提示文案 */
+function updateDanbooruRandomStrategyUI() {
+    const group = document.getElementById('danbooruRandomStrategyGroup');
+    const hint = document.getElementById('danbooruRandomStrategyHint');
+    const fullCb = document.getElementById('danbooru_random_full');
+    if (!group) return;
+
+    const randomEnabled = document.getElementById('danbooru_random')?.checked;
+    const authed = hasDanbooruAuth();
+    const show = !!(randomEnabled && authed);
+    group.hidden = !show;
+
+    if (!hint) return;
+    if (!show) {
+        hint.textContent = '';
+        return;
+    }
+    if (fullCb?.checked) {
+        hint.textContent = '当前：全随机 — 每条独立请求 /posts/random，分布更均匀；请求次数多、更易触发限流，加载略慢。';
+    } else {
+        hint.textContent = '当前：批量随机（默认）— 随机页一次取多条，速度快、省配额；同页内相关性略高，大库下通常足够随机。';
+    }
+}
+
+function onDanbooruRandomModeChange() {
+    updateDanbooruRandomStrategyUI();
+    saveSettings();
+    resetAndFetch();
+}
+
+/** Login / API Key 变更：更新策略开关可见性并刷新 */
+function onDanbooruAuthChange() {
+    updateDanbooruRandomStrategyUI();
+    saveSettings();
+    resetAndFetch();
+}
+
 async function fetchDanbooruImages() {
     if (!danbooruHasMore) return;
 
@@ -158,6 +213,7 @@ async function fetchDanbooruImages() {
     const apiKey = document.getElementById('danbooru_apikey').value.trim();
     const hasAuth = !!(login && apiKey);
     const randomEnabled = document.getElementById('danbooru_random').checked;
+    const fullRandom = useFullRandomStrategy();
 
     let tags = translateSearchTags(document.getElementById('tagInput').value.trim());
     const rating = document.getElementById('danbooru_rating').value;
@@ -174,8 +230,8 @@ async function fetchDanbooruImages() {
     let posts = [];
 
     try {
-        if (randomEnabled && hasAuth) {
-            // ========== 方案 A：有 key，用 /posts/random ==========
+        if (fullRandom) {
+            // ========== 全随机：有 key 且用户开启，用 /posts/random ==========
             const CONCURRENCY = 6;
             const TOTAL = DANBOORU_PAGE_SIZE;
 
@@ -201,7 +257,7 @@ async function fetchDanbooruImages() {
             }
 
         } else {
-            // ========== 方案 B 或 普通模式 ==========
+            // ========== 批量随机（默认）或 普通分页 ==========
             const params = new URLSearchParams();
             params.append('limit', String(DANBOORU_PAGE_SIZE));
 

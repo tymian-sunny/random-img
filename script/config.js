@@ -213,6 +213,9 @@ function switchDataSource() {
     const tagInput = document.getElementById('tagInput');
     if (tagInput) tagInput.value = '';
     hideTagSuggestions();
+    if (typeof updateDanbooruRandomStrategyUI === 'function') {
+        updateDanbooruRandomStrategyUI();
+    }
 
     if (isShowingFavorites) {
         toggleFavoritesPage();

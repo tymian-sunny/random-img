@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
 """
-使用 Gemini API 批量翻译 Danbooru 英文标签。
-
-输入：前端「下载未翻译 JSON」得到的文件（或同结构的 JSON）
-  {
-    "version": 1,
-    "tags": ["tag_a", "tag_b", ...]
-  }
-也兼容：纯字符串数组 JSON、旧版 TSV（首列 tag）。
-
-输出：默认追加写入 TXT（每行 英文=中文），可选同时写出可合并的词典片段 JSON。
+使用 Gemini API 批量翻译 Danbooru 英文标签，直接读写 danbooru_tags_zh.json 词典。
+包含方案 1：使用临时文件和原子替换（Atomic Write），防止多程序并发修改时文件损坏。
 """
 
 import argparse
-import csv
 import json
 import os
+import tempfile
 import time
 import urllib.request
 import urllib.error
@@ -29,11 +21,11 @@ MODEL_NAME = "gemini-2.5-flash"
 # =========================================
 
 
-def load_tags_from_json(json_path):
-    """从未翻译标签 JSON 读取待翻译列表。"""
+def load_input_tags(json_path):
+    """从输入的未翻译 JSON 中读取待翻译标签列表。"""
     tags = []
     if not os.path.exists(json_path):
-        print(f"❌ 错误：找不到文件 '{json_path}'")
+        print(f"❌ 错误：找不到输入文件 '{json_path}'")
         return tags
 
     with open(json_path, "r", encoding="utf-8") as f:
@@ -45,20 +37,11 @@ def load_tags_from_json(json_path):
         if isinstance(data.get("tags"), list):
             raw = data["tags"]
         elif isinstance(data.get("tags"), dict):
-            # 兼容直接传入词典结构：取尚未有 zh 的 key，或全部 key
-            raw = []
-            for k, v in data["tags"].items():
-                if v is None or v == "" or (isinstance(v, dict) and not (v.get("zh") or v.get("cn"))):
-                    raw.append(k)
-                elif not isinstance(v, (str, dict)):
-                    raw.append(k)
-            if not raw:
-                raw = list(data["tags"].keys())
+            raw = list(data["tags"].keys())
         else:
-            # 可能是 { "tag1": null, ... } 形式
             raw = list(data.keys())
     else:
-        print("❌ JSON 格式无法识别，需要是数组或含 tags 字段的对象")
+        print("❌ 输入 JSON 格式无法识别")
         return tags
 
     seen = set()
@@ -77,53 +60,8 @@ def load_tags_from_json(json_path):
     return tags
 
 
-def load_tags_from_tsv(tsv_path):
-    """兼容旧版：使用标准库 csv 读取 TSV 文件中的 Tag。"""
-    tags = []
-    if not os.path.exists(tsv_path):
-        print(f"❌ 错误：找不到文件 '{tsv_path}'")
-        return tags
-
-    with open(tsv_path, "r", encoding="utf-8") as f:
-        reader = csv.reader(f, delimiter="\t")
-        for i, row in enumerate(reader):
-            if row:
-                tag = row[0].strip()
-                if i == 0 and tag.lower() == "tag":
-                    continue
-                if tag:
-                    tags.append(tag)
-    return tags
-
-
-def load_tags(path):
-    """按扩展名自动选择 JSON 或 TSV 加载。"""
-    lower = path.lower()
-    if lower.endswith(".json"):
-        return load_tags_from_json(path)
-    if lower.endswith(".tsv") or lower.endswith(".txt") or lower.endswith(".csv"):
-        return load_tags_from_tsv(path)
-    # 默认尝试 JSON，失败再试 TSV
-    try:
-        return load_tags_from_json(path)
-    except json.JSONDecodeError:
-        return load_tags_from_tsv(path)
-
-
-def load_already_translated(txt_path):
-    """每次调用时实时读取输出的 txt 文件，保证不重复翻译和写入。"""
-    translated_set = set()
-    if os.path.exists(txt_path):
-        with open(txt_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if "=" in line:
-                    en = line.split("=", 1)[0].strip()
-                    translated_set.add(en)
-    return translated_set
-
-
-def load_existing_dictionary(dict_path):
-    """读取已有词典 JSON，用于去重与合并输出。"""
+def load_dictionary(dict_path):
+    """读取现有词典 JSON。"""
     if not dict_path or not os.path.exists(dict_path):
         return {"version": 1, "tags": {}, "aliases": {}}
     with open(dict_path, "r", encoding="utf-8") as f:
@@ -143,7 +81,7 @@ def translate_batch_native(api_key, batch):
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent?key={api_key}"
 
     prompt = (
-        "你是一个动漫与图像 Tag 翻译专家。请将以下 Danbooru 英文 Tag 翻译为中文。\n"
+        "你是一个动漫与图像 Tag 翻译专家。请将以下 Danbooru 英文 Tag 翻译为简体中文。\n"
         "【严格要求】：\n"
         "1. 每行输出格式必须严格为：英文=中文\n"
         "2. 不要添加任何解释、序言、Markdown 代码块标记（如 ```txt 或 ```）或序号。\n"
@@ -200,7 +138,6 @@ def parse_translation_lines(results):
         line = line.strip()
         if not line or "=" not in line:
             continue
-        # 去掉可能的 markdown 残留
         if line.startswith("```"):
             continue
         en_part, zh_part = line.split("=", 1)
@@ -211,80 +148,88 @@ def parse_translation_lines(results):
     return pairs
 
 
+def save_dictionary_safely(dict_data, dict_path):
+    """
+    方案1：使用临时文件 + 原子替换（Atomic Write）安全地保存词典。
+    防止写入过程中断电、异常或多程序并发写入时导致 JSON 文件损坏。
+    """
+    dir_name = os.path.dirname(dict_path) or "."
+    # 在同目录下创建一个临时文件并写入
+    with tempfile.NamedTemporaryFile("w", dir=dir_name, delete=False, encoding="utf-8") as tf:
+        json.dump(dict_data, tf, ensure_ascii=False, indent=2)
+        tf.write("\n")
+        temp_name = tf.name
+    
+    # 原子替换：操作系统保证这一瞬间要么全换过去，要么保留旧文件
+    os.replace(temp_name, dict_path)
+
+
 def main():
     parser = argparse.ArgumentParser(
-        description="使用 Gemini API 翻译未翻译标签 JSON（前端导出）或旧版 TSV"
+        description="使用 Gemini API 翻译标签并采用原子写入安全更新 danbooru_tags_zh.json"
     )
     parser.add_argument(
         "--input", "-i",
         required=True,
-        help="输入文件：前端下载的 untranslated_tags_*.json，或旧版 TSV"
-    )
-    parser.add_argument(
-        "--output", "-o",
-        default="translated_tags.txt",
-        help="追加写入的 TXT 路径（每行 英文=中文），默认 translated_tags.txt"
+        help="输入文件：前端下载的未翻译 JSON"
     )
     parser.add_argument(
         "--dict", "-d",
-        default="",
-        help="可选：现有词典 JSON 路径，用于跳过已有翻译，并在 --merge-out 时作为合并基底"
-    )
-    parser.add_argument(
-        "--merge-out",
-        default="",
-        help="可选：写出合并后的完整词典 JSON，管理员可直接替换 data/danbooru_tags_zh.json"
+        default="danbooru_tags_zh.json",
+        help="目标词典 JSON 路径（默认：danbooru_tags_zh.json）"
     )
     args = parser.parse_args()
 
     if not API_KEY or API_KEY == "YOUR_GEMINI_API_KEY_HERE":
-        print("请先设置环境变量 GEMINI_API_KEY，或在脚本中填写 API Key！")
+        print("请先设置环境变量 GEMINI_API_KEY！")
         return
 
     input_path = args.input
-    output_txt_path = args.output
+    dict_path = args.dict
 
-    all_tags = load_tags(input_path)
+    # 1. 加载待翻译标签
+    all_tags = load_input_tags(input_path)
     if not all_tags:
         print("没有读取到任何有效的 Tag，程序退出。")
         return
 
-    already_translated = load_already_translated(output_txt_path)
+    # 2. 加载现有词典
+    dict_data = load_dictionary(dict_path)
+    existing_tags = dict_data.get("tags", {})
 
-    # 若提供了词典，也把词典里已有条目视为已翻译
-    dict_data = load_existing_dictionary(args.dict) if args.dict else None
-    if dict_data:
-        for key in dict_data.get("tags", {}):
-            already_translated.add(key)
-            already_translated.add(key.lower())
+    translated_set = set()
+    for k in existing_tags.keys():
+        translated_set.add(k)
+        translated_set.add(k.lower())
 
-    remaining_tags = [tag for tag in all_tags if tag not in already_translated and tag.lower() not in already_translated]
+    # 3. 过滤掉已经翻译过的标签
+    remaining_tags = [
+        tag for tag in all_tags 
+        if tag not in translated_set and tag.lower() not in translated_set
+    ]
 
-    print(f"📊 总 Tag 数: {len(all_tags)} | 已翻译/已在词典: {len(all_tags) - len(remaining_tags)} | 剩余待翻译: {len(remaining_tags)}")
+    print(f"📊 总 Tag 数: {len(all_tags)} | 词典已存在: {len(all_tags) - len(remaining_tags)} | 剩余待翻译: {len(remaining_tags)}")
 
     if not remaining_tags:
-        print("🎉 所有 Tag 均已翻译完成，无需重复处理！")
-        if args.merge_out and dict_data is not None:
-            # 仍可根据已有 txt 合并一次
-            _merge_and_write(dict_data, output_txt_path, args.merge_out)
+        print("🎉 所有 Tag 均已在词典中存在，无需翻译！")
         return
 
     total_batches = (len(remaining_tags) + BATCH_SIZE - 1) // BATCH_SIZE
-    new_pairs = []
 
+    # 4. 分批调用 API 并安全写入词典
     for i in range(0, len(remaining_tags), BATCH_SIZE):
         batch = remaining_tags[i : i + BATCH_SIZE]
         current_batch_num = i // BATCH_SIZE + 1
 
-        current_already_translated = load_already_translated(output_txt_path)
-        if dict_data:
-            for key in dict_data.get("tags", {}):
-                current_already_translated.add(key)
-                current_already_translated.add(key.lower())
-        batch = [tag for tag in batch if tag not in current_already_translated and tag.lower() not in current_already_translated]
+        # 动态重新检查，支持随时中断续传
+        current_dict = load_dictionary(dict_path)
+        cur_tags_keys = set(current_dict.get("tags", {}).keys())
+        cur_tags_keys_lower = {k.lower() for k in cur_tags_keys}
+
+        batch = [t for t in batch if t not in cur_tags_keys and t.lower() not in cur_tags_keys_lower]
 
         if not batch:
-            print(f"[{current_batch_num}/{total_batches}] 当前批次所有词条均已存在，跳过...")
+            print(f"[{current_batch_num}/{total_batches}] 当前批次词条均已存在，跳过...")
             continue
 
         print(f"[{current_batch_num}/{total_batches}] 正在翻译 {len(batch)} 个词条...")
@@ -293,64 +238,19 @@ def main():
         pairs = parse_translation_lines(results)
 
         valid_count = 0
-        with open(output_txt_path, "a", encoding="utf-8") as f_out:
-            for en_part, zh_part in pairs:
-                if en_part in current_already_translated or en_part.lower() in current_already_translated:
-                    continue
-                f_out.write(f"{en_part}={zh_part}\n")
-                current_already_translated.add(en_part)
-                current_already_translated.add(en_part.lower())
-                new_pairs.append((en_part, zh_part))
+        for en_part, zh_part in pairs:
+            if en_part not in current_dict["tags"]:
+                current_dict["tags"][en_part] = {"zh": zh_part, "category": "general"}
                 valid_count += 1
 
-        print(f"  └─ 成功保存 {valid_count} 条新记录")
+        # 使用方案1的原子写入安全保存
+        save_dictionary_safely(current_dict, dict_path)
+        print(f"  └─ 成功翻译并安全更新 {valid_count} 条记录到 {dict_path}")
 
         if current_batch_num < total_batches:
             time.sleep(DELAY_BETWEEN_REQUESTS)
 
-    print(f"✅ 翻译任务全部结束！结果已保存至: {output_txt_path}")
-
-    if args.merge_out:
-        base = dict_data if dict_data is not None else load_existing_dictionary(args.dict)
-        _merge_and_write(base, output_txt_path, args.merge_out)
-
-
-def _merge_and_write(base_dict, txt_path, merge_out_path):
-    """把 TXT 中的 英文=中文 合并进词典结构并写出 JSON。"""
-    tags = dict(base_dict.get("tags") or {})
-    if os.path.exists(txt_path):
-        with open(txt_path, "r", encoding="utf-8") as f:
-            for line in f:
-                if "=" not in line:
-                    continue
-                en, zh = line.split("=", 1)
-                en = en.strip()
-                zh = zh.strip()
-                if not en or not zh:
-                    continue
-                key = en  # 保持原始大小写风格；Danbooru 多为小写
-                existing = tags.get(key) or tags.get(key.lower())
-                if isinstance(existing, dict):
-                    existing = dict(existing)
-                    existing["zh"] = zh
-                    tags[key] = existing
-                elif isinstance(existing, str):
-                    tags[key] = {"zh": zh}
-                else:
-                    tags[key] = {"zh": zh}
-
-    out = {
-        "version": base_dict.get("version", 1),
-        "description": base_dict.get("description")
-        or "Danbooru 英文标签到简体中文的本地词典。可在网页收集未翻译标签并下载 JSON，经 translation.py 翻译后替换本文件。",
-        "tags": tags,
-        "aliases": base_dict.get("aliases") or {},
-    }
-    with open(merge_out_path, "w", encoding="utf-8") as f:
-        json.dump(out, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    print(f"📦 已写出合并词典: {merge_out_path} （共 {len(tags)} 个标签）")
-    print("   管理员可将该文件手动替换为 data/danbooru_tags_zh.json")
+    print(f"✅ 翻译任务全部结束！词典已安全更新并保存至: {dict_path}")
 
 
 if __name__ == "__main__":
