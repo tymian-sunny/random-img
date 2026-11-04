@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>Multi-Source Image Browser (Setu / Danbooru)</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body data-source="setu">
+<div class="container">
+    <div class="panel">
+        <div class="panel-header">
+            <h2 id="panelTitle">多源图库 API 浏览器</h2>
+            <button id="favPageBtn" class="btn-fav-nav" onclick="toggleFavoritesPage()">查看收藏页</button>
+        </div>
+        <div class="form-grid" id="filterFormGrid">
+            <div class="form-group">
+                <label>数据源 (DataSource)</label>
+                <select id="dataSource" onchange="switchDataSource()">
+                    <option value="setu">Setu API (Pixiv 代理)</option>
+                    <option value="danbooru">Danbooru (官方 API + Nginx 反代)</option>
+                </select>
+            </div>
+            <div class="form-group source-setu">
+                <label>R18 过滤 (r18)</label>
+                <select id="setu_r18" onchange="resetAndFetch()">
+                    <option value="0">非 R18</option><option value="1">仅 R18</option><option value="2">混合</option>
+                </select>
+            </div>
+            <div class="form-group source-danbooru">
+                <label>分级过滤 (Rating)</label>
+                <select id="danbooru_rating" onchange="resetAndFetch()">
+                    <option value="">全部 (Any)</option><option value="g">安全 (General)</option><option value="s">敏感 (Sensitive)</option><option value="q">问号/半露 (Questionable)</option><option value="e">限制级 (Explicit)</option>
+                </select>
+            </div>
+            <div class="form-group source-danbooru">
+                <label>图库预览分辨率</label>
+                <select id="danbooru_image_size" onchange="resetAndFetch()">
+                    <option value="180">180 × 180（缩略图）</option><option value="360">360 × 360（中等预览）</option><option value="720" selected>720 × 720（高清预览）</option><option value="large">Large（大图预览，通常约 850px）</option><option value="original">Original（原图，流量较大）</option>
+                </select>
+            </div>
+            <div class="form-group checkbox-group source-danbooru">
+                <input type="checkbox" id="danbooru_random" checked onchange="resetAndFetch()">
+                <label for="danbooru_random">随机排序 (Random)</label>
+                <span class="easter-trigger" onclick="handleEasterClick()">✨</span>
+            </div>
+            <div class="form-group tag-autocomplete-group">
+                <label for="tagInput" class="tag-label">
+                    <span>标签 (Tags)</span>
+                    <span class="tag-tooltip source-setu" data-tooltip="逗号表 AND，| 表 OR">ⓘ</span>
+                    <span class="tag-tooltip source-danbooru" data-tooltip="空格分隔；支持中英文联想和中文标签">ⓘ</span>
+                </label>
+                <input type="text" id="tagInput" placeholder="输入搜索标签..." onchange="resetAndFetch()" autocomplete="off" autocapitalize="off" spellcheck="false" aria-autocomplete="list" aria-controls="tagSuggestions" aria-expanded="false">
+                <div class="tag-suggestions" id="tagSuggestions" role="listbox" hidden></div>
+            </div>
+            <div class="form-group source-setu">
+                <label>画师 UID (uid) <small>逗号分隔</small></label>
+                <input type="text" id="setu_uid" placeholder="例如: 43454954" onchange="resetAndFetch()">
+            </div>
+            <div class="form-group source-setu">
+                <label>关键字 (keyword)</label>
+                <input type="text" id="setu_keyword" placeholder="模糊匹配标题/作者" onchange="resetAndFetch()">
+            </div>
+            <div class="form-group source-setu">
+                <label>长宽比 (aspectRatio)</label>
+                <input type="text" id="setu_aspectRatio" placeholder="例: gt1(横), lt1(竖)" onchange="resetAndFetch()">
+            </div>
+            <div class="form-group source-setu">
+                <label>反代服务 (proxy)</label>
+                <input type="text" id="setu_proxy" value="i.pixiv.re">
+            </div>
+            <div class="form-group checkbox-group source-setu">
+                <input type="checkbox" id="setu_excludeAI" checked onchange="resetAndFetch()">
+                <label for="setu_excludeAI">排除 AI 作品</label>
+                <span class="easter-trigger" onclick="handleEasterClick()">✨</span>
+            </div>
+            <div class="form-group source-danbooru">
+                <label>Danbooru 用户名 (Login)</label>
+                <input type="text" id="danbooru_login" placeholder="选填 (突破无Key标签限制)" onchange="resetAndFetch()">
+            </div>
+            <div class="form-group source-danbooru">
+                <label>Danbooru API Key</label>
+                <input type="password" id="danbooru_apikey" placeholder="选填 (账户设置中获取)" onchange="resetAndFetch()">
+            </div>
+        </div>
+        <button id="fetchBtn" onclick="resetAndFetch()">应用配置并刷新</button>
+    </div>
+    <div class="gallery" id="gallery"></div>
+    <div id="loadingStatus" class="loading-status" style="display: none;">正在加载更多图片...</div>
+</div>
+<div class="detail-modal" id="detailModal" aria-hidden="true">
+    <div class="detail-panel" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+        <div class="detail-image-wrap"><img id="detailImage" class="detail-image" alt="作品预览"></div>
+        <div class="detail-content">
+            <!-- 标题和收藏/关闭按钮在同一行正常排布，绝不与图片重叠 -->
+            <div class="detail-header">
+                <h2 class="detail-title" id="detailTitle">作品详情</h2>
+                <div class="detail-actions">
+                    <button type="button" id="modalFavBtn" class="modal-fav-btn" onclick="toggleModalFav()">⭐ 收藏</button>
+                    <button type="button" class="detail-close" id="detailClose" aria-label="关闭详情">×</button>
+                </div>
+            </div>
+            <div class="detail-subtitle" id="detailSubtitle"></div>
+            <div class="detail-section"><h4>基本信息</h4><div class="detail-fields" id="detailFields"></div></div>
+            <div class="detail-section"><h4>标签（点击标签可直接搜索）</h4><div class="detail-tags" id="detailTags"></div></div>
+        </div>
+    </div>
+</div>
+<div class="modal" id="modal">
+    <span class="modal-close" onclick="closeModal()">&times;</span>
+    <span class="loading-text" id="modalLoading">加载原图中...</span>
+    <img id="modalImg" src="" alt="Original Image" onload="document.getElementById('modalLoading').style.display='none';">
+</div>
+<button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
+
+    <script src="script/config.js"></script>
+    <script src="script/translator.js"></script>
+    <script src="script/api.js"></script>
+    <script src="script/gallery.js"></script>
+    <script src="script/modal.js"></script>
+    <script src="script/main.js"></script>
+</body>
+</html>
