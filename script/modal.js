@@ -3,12 +3,80 @@ let detailModal, detailImage, activeDetailItem = null;
 let modal, modalImg, modalLoading;
 let currentScale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0;
 
+/** 打开弹层时锁定背后页面滚动位置，避免手机滑动/缩放带动主页 */
+let bodyScrollLockCount = 0;
+let bodyScrollLockY = 0;
+
+function lockBodyScroll() {
+    if (bodyScrollLockCount === 0) {
+        bodyScrollLockY = window.scrollY || window.pageYOffset || 0;
+        document.body.style.position = 'fixed';
+        document.body.style.top = `-${bodyScrollLockY}px`;
+        document.body.style.left = '0';
+        document.body.style.right = '0';
+        document.body.style.width = '100%';
+        document.body.style.overflow = 'hidden';
+        document.documentElement.style.overflow = 'hidden';
+        document.body.classList.add('modal-open');
+    }
+    bodyScrollLockCount += 1;
+}
+
+function unlockBodyScroll() {
+    if (bodyScrollLockCount === 0) return;
+    bodyScrollLockCount -= 1;
+    if (bodyScrollLockCount > 0) return;
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    document.body.style.overflow = '';
+    document.documentElement.style.overflow = '';
+    document.body.classList.remove('modal-open');
+    window.scrollTo(0, bodyScrollLockY);
+}
+
+function isScrollableElement(el) {
+    if (!el || el === document.body || el === document.documentElement) return false;
+    const style = window.getComputedStyle(el);
+    const oy = style.overflowY;
+    const canScrollY = (oy === 'auto' || oy === 'scroll' || oy === 'overlay') && el.scrollHeight > el.clientHeight + 1;
+    return canScrollY;
+}
+
+/** 弹层内：允许在可滚动区域滑动；其它区域阻止把滚动传给背后页面 */
+function onOverlayTouchMove(event) {
+    if (bodyScrollLockCount === 0) return;
+    // 多指（双指缩放等）一律拦截，避免浏览器缩放整页
+    if (event.touches && event.touches.length > 1) {
+        event.preventDefault();
+        return;
+    }
+    let node = event.target;
+    while (node && node !== document.body) {
+        if (isScrollableElement(node)) {
+            return; // 让内部滚动自然发生
+        }
+        // 大图本身用 transform 拖动，不把 touch 交给页面
+        if (node === modalImg || node === modal) {
+            event.preventDefault();
+            return;
+        }
+        node = node.parentElement;
+    }
+    event.preventDefault();
+}
+
 function initModalElements() {
     detailModal = document.getElementById('detailModal');
     detailImage = document.getElementById('detailImage');
     modal = document.getElementById('modal');
     modalImg = document.getElementById('modalImg');
     modalLoading = document.getElementById('modalLoading');
+
+    // 全局拦截：弹层打开时，非内部滚动区域的 touchmove 不传到主页
+    document.addEventListener('touchmove', onOverlayTouchMove, { passive: false });
 
     const detailCloseBtn = document.getElementById('detailClose');
     if (detailCloseBtn) {
@@ -25,6 +93,9 @@ function initModalElements() {
 
     if (modal) {
         modal.addEventListener('mousedown', event => {
+            if (event.target === modal) closeModal();
+        });
+        modal.addEventListener('click', event => {
             if (event.target === modal) closeModal();
         });
         modal.addEventListener('wheel', event => {
@@ -44,6 +115,45 @@ function initModalElements() {
             translateY = (my - cy) - (my - cy - translateY) * actualDelta;
             updateTransform();
         }, { passive: false });
+
+        // 大图：单指拖动 / 双指缩放（不触发浏览器页面缩放）
+        let pinchStartDist = 0;
+        let pinchStartScale = 1;
+        modalImg.addEventListener('touchstart', event => {
+            if (!modal.classList.contains('active')) return;
+            if (event.touches.length === 1) {
+                isDragging = true;
+                startX = event.touches[0].clientX - translateX;
+                startY = event.touches[0].clientY - translateY;
+            } else if (event.touches.length === 2) {
+                isDragging = false;
+                const dx = event.touches[0].clientX - event.touches[1].clientX;
+                const dy = event.touches[0].clientY - event.touches[1].clientY;
+                pinchStartDist = Math.hypot(dx, dy) || 1;
+                pinchStartScale = currentScale;
+            }
+        }, { passive: true });
+
+        modalImg.addEventListener('touchmove', event => {
+            if (!modal.classList.contains('active')) return;
+            if (event.touches.length === 2) {
+                event.preventDefault();
+                const dx = event.touches[0].clientX - event.touches[1].clientX;
+                const dy = event.touches[0].clientY - event.touches[1].clientY;
+                const dist = Math.hypot(dx, dy) || 1;
+                currentScale = Math.max(0.2, Math.min(10, pinchStartScale * (dist / pinchStartDist)));
+                updateTransform();
+            } else if (event.touches.length === 1 && isDragging) {
+                event.preventDefault();
+                translateX = event.touches[0].clientX - startX;
+                translateY = event.touches[0].clientY - startY;
+                updateTransform();
+            }
+        }, { passive: false });
+
+        modalImg.addEventListener('touchend', () => {
+            isDragging = false;
+        });
     }
 
     if (modalImg) {
@@ -146,13 +256,16 @@ function openDetail(item) {
     }
     detailModal.classList.add('active');
     detailModal.setAttribute('aria-hidden', 'false');
+    lockBodyScroll();
 }
 
 function closeDetail() {
+    if (!detailModal.classList.contains('active')) return;
     detailModal.classList.remove('active');
     detailModal.setAttribute('aria-hidden', 'true');
     detailImage.src = '';
     activeDetailItem = null;
+    unlockBodyScroll();
 }
 
 function searchByDetailTag(tag) {
@@ -184,10 +297,16 @@ function openModal(originalUrl) {
     modalLoading.style.display = 'block';
     modalImg.src = '';
     modalImg.src = originalUrl;
+    const wasActive = modal.classList.contains('active');
     modal.classList.add('active');
+    if (!wasActive) lockBodyScroll();
 }
 
 function closeModal() {
+    if (!modal.classList.contains('active')) return;
     modal.classList.remove('active');
     modalImg.src = '';
+    currentScale = 1; translateX = 0; translateY = 0;
+    isDragging = false;
+    unlockBodyScroll();
 }
