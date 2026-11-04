@@ -4,9 +4,21 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
 .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; position: relative; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
 .panel-header h2 { margin: 0; }
-.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
-.form-group { display: flex; flex-direction: column; gap: 5px; }
-.form-group label { font-size: 14px; font-weight: bold; }
+.form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+    gap: 15px;
+    width: 100%;
+    min-width: 0;
+}
+.form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+    max-width: 100%;
+}
+.form-group label { font-size: 14px; font-weight: bold; overflow-wrap: anywhere; }
 
 /* 标签提示左右水平对齐与气泡样式 */
 .tag-label { display: inline-flex !important; align-items: center; gap: 6px; flex-wrap: nowrap; }
@@ -45,8 +57,18 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
 .tag-suggestion-meta { color: #7b8490; font-size: 11px; white-space: nowrap; }
 .tag-suggestion-hint { padding: 9px 11px; color: #687386; font-size: 12px; }
 input, select, textarea { padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; box-sizing: border-box; }
-.checkbox-group { flex-direction: row; align-items: center; position: relative; }
-.checkbox-group input { margin: 0; width: auto; }
+.checkbox-group {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    position: relative;
+    gap: 6px;
+    min-width: 0;
+    max-width: 100%;
+}
+.checkbox-group input { margin: 0; width: auto; flex-shrink: 0; }
+.checkbox-group label { font-weight: bold; overflow-wrap: anywhere; }
 
 .easter-trigger {
     display: inline-block; width: 24px; height: 24px; margin-left: 6px;
@@ -89,6 +111,10 @@ body[data-source="danbooru"] .dict-admin-bar { display: flex; }
 /* 随机排序 + 随机策略：同一格子内纵向排列，不横向挤占 */
 .random-options-group {
     gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    grid-column: 1 / -1; /* 独占整行，避免与旁侧格子并排挤出白块 */
 }
 .random-strategy-block {
     display: flex;
@@ -96,6 +122,8 @@ body[data-source="danbooru"] .dict-admin-bar { display: flex; }
     gap: 4px;
     padding-top: 2px;
     border-top: 1px solid #e2e8f0;
+    min-width: 0;
+    max-width: 100%;
 }
 .random-strategy-block[hidden] {
     display: none !important;
@@ -109,6 +137,8 @@ body[data-source="danbooru"] .dict-admin-bar { display: flex; }
     line-height: 1.45;
     color: #64748b;
     font-weight: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 .btn-fav-nav { background: #ff9800; width: auto; padding: 8px 16px; font-size: 14px; margin: 0; display: none; }
 .btn-fav-nav.show { display: inline-block; }
@@ -219,9 +249,30 @@ body.modal-open {
 }
 .modal-close { position: absolute; top: 20px; right: 30px; color: white; font-size: 40px; cursor: pointer; z-index: 1010; }
 .loading-text { color: white; position: absolute; z-index: -1; }
+/* 按数据源显隐：保持 form-group 纵向布局，避免被改成横向 flex 撑出空白列 */
 .source-setu, .source-danbooru { display: none; }
-body[data-source="setu"] .source-setu { display: flex; }
-body[data-source="danbooru"] .source-danbooru { display: flex; }
+body[data-source="setu"] .form-group.source-setu,
+body[data-source="danbooru"] .form-group.source-danbooru {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+}
+/* 勾选行仍横向排列 */
+body[data-source="setu"] .form-group.checkbox-group.source-setu,
+body[data-source="danbooru"] .form-group.checkbox-group.source-danbooru {
+    flex-direction: row;
+    align-items: center;
+}
+/* 非 form-group 的 source 标记（如提示图标）恢复为 inline-flex */
+body[data-source="setu"] .tag-tooltip.source-setu,
+body[data-source="danbooru"] .tag-tooltip.source-danbooru {
+    display: inline-flex;
+}
+/* 词典管理条（带 source-danbooru，但不是 form-group） */
+body[data-source="danbooru"] .dict-admin-bar.source-danbooru {
+    display: flex;
+}
 .muted { color: #777; font-weight: normal; }
 #backToTop {
     position: fixed; right: 24px; bottom: 24px; width: 46px; height: 46px; border: none; border-radius: 50%;
@@ -232,9 +283,12 @@ body[data-source="danbooru"] .source-danbooru { display: flex; }
 #backToTop:hover { background: rgba(30, 30, 30, 0.95); transform: translateY(-3px); }
 #backToTop.show { display: flex; }
 @media (max-width: 600px) {
-    body { padding: 10px; }
-    .panel { padding: 14px; }
+    body { padding: 10px; overflow-x: hidden; }
+    .panel { padding: 14px; overflow-x: hidden; max-width: 100%; }
+    .form-grid { grid-template-columns: 1fr; }
+    .random-options-group { grid-column: auto; }
     .gallery { gap: 8px; }
     .gallery-col { flex: 1 1 0; min-width: 0; max-width: none; gap: 8px; }
     #backToTop { right: 16px; bottom: 16px; }
+    .dict-admin-bar { width: 100%; box-sizing: border-box; }
 }
