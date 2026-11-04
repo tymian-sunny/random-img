@@ -2,6 +2,11 @@
 let detailModal, detailImage, activeDetailItem = null;
 let modal, modalImg, modalLoading;
 let currentScale = 1, translateX = 0, translateY = 0, isDragging = false, startX = 0, startY = 0;
+/** 本次指针操作是否发生了有效拖动（用于区分点击关闭与拖动回位） */
+let modalPointerMoved = false;
+let pinchStartDist = 0;
+let pinchStartScale = 1;
+let lastTapTime = 0;
 
 /** 打开弹层时锁定背后页面滚动位置，避免手机滑动/缩放带动主页 */
 let bodyScrollLockCount = 0;
@@ -92,20 +97,14 @@ function initModalElements() {
     }
 
     if (modal) {
-        modal.addEventListener('mousedown', event => {
-            if (event.target === modal) closeModal();
-        });
-        modal.addEventListener('click', event => {
-            if (event.target === modal) closeModal();
-        });
+        // 滚轮缩放（以指针为中心）
         modal.addEventListener('wheel', event => {
             if (!modal.classList.contains('active')) return;
             event.preventDefault();
             const zoomSpeed = 0.1;
             const delta = event.deltaY < 0 ? 1 + zoomSpeed : 1 - zoomSpeed;
             const oldScale = currentScale;
-            currentScale *= delta;
-            currentScale = Math.max(0.2, Math.min(currentScale, 10));
+            currentScale = Math.max(0.2, Math.min(10, currentScale * delta));
             const actualDelta = currentScale / oldScale;
             const cx = window.innerWidth / 2;
             const cy = window.innerHeight / 2;
@@ -113,19 +112,55 @@ function initModalElements() {
             const my = event.clientY;
             translateX = (mx - cx) - (mx - cx - translateX) * actualDelta;
             translateY = (my - cy) - (my - cy - translateY) * actualDelta;
+            clampImageTransform();
             updateTransform();
         }, { passive: false });
 
-        // 大图：单指拖动 / 双指缩放（不触发浏览器页面缩放）
-        let pinchStartDist = 0;
-        let pinchStartScale = 1;
-        modalImg.addEventListener('touchstart', event => {
+        // 整个大图层（含灰色区域）都可拖动回位；未缩放时点灰色关闭
+        modal.addEventListener('mousedown', event => {
             if (!modal.classList.contains('active')) return;
+            if (event.target.closest('.modal-close')) return;
+            event.preventDefault();
+            modalPointerMoved = false;
+            isDragging = true;
+            startX = event.clientX - translateX;
+            startY = event.clientY - translateY;
+        });
+
+        modal.addEventListener('click', event => {
+            if (!modal.classList.contains('active')) return;
+            if (event.target.closest('.modal-close')) return;
+            // 发生过拖动则不当作关闭点击
+            if (modalPointerMoved) return;
+            // 缩放/偏移状态下点灰色：复位；未缩放点灰色：关闭
+            if (event.target === modal || event.target === modalLoading) {
+                if (currentScale > 1.02 || Math.abs(translateX) > 8 || Math.abs(translateY) > 8) {
+                    resetImageTransform();
+                } else {
+                    closeModal();
+                }
+            }
+        });
+
+        // 触摸：整层单指拖动 / 双指缩放；双击复位
+        modal.addEventListener('touchstart', event => {
+            if (!modal.classList.contains('active')) return;
+            if (event.target.closest('.modal-close')) return;
+            modalPointerMoved = false;
             if (event.touches.length === 1) {
+                const now = Date.now();
+                if (now - lastTapTime < 280) {
+                    // 双击复位
+                    resetImageTransform();
+                    lastTapTime = 0;
+                    isDragging = false;
+                    return;
+                }
+                lastTapTime = now;
                 isDragging = true;
                 startX = event.touches[0].clientX - translateX;
                 startY = event.touches[0].clientY - translateY;
-            } else if (event.touches.length === 2) {
+            } else if (event.touches.length >= 2) {
                 isDragging = false;
                 const dx = event.touches[0].clientX - event.touches[1].clientX;
                 const dy = event.touches[0].clientY - event.touches[1].clientY;
@@ -134,36 +169,80 @@ function initModalElements() {
             }
         }, { passive: true });
 
-        modalImg.addEventListener('touchmove', event => {
+        modal.addEventListener('touchmove', event => {
             if (!modal.classList.contains('active')) return;
-            if (event.touches.length === 2) {
+            if (event.touches.length >= 2) {
                 event.preventDefault();
+                modalPointerMoved = true;
                 const dx = event.touches[0].clientX - event.touches[1].clientX;
                 const dy = event.touches[0].clientY - event.touches[1].clientY;
                 const dist = Math.hypot(dx, dy) || 1;
                 currentScale = Math.max(0.2, Math.min(10, pinchStartScale * (dist / pinchStartDist)));
+                clampImageTransform();
                 updateTransform();
             } else if (event.touches.length === 1 && isDragging) {
                 event.preventDefault();
-                translateX = event.touches[0].clientX - startX;
-                translateY = event.touches[0].clientY - startY;
+                const nx = event.touches[0].clientX - startX;
+                const ny = event.touches[0].clientY - startY;
+                if (Math.abs(nx - translateX) > 3 || Math.abs(ny - translateY) > 3) {
+                    modalPointerMoved = true;
+                }
+                translateX = nx;
+                translateY = ny;
+                clampImageTransform();
                 updateTransform();
             }
         }, { passive: false });
 
-        modalImg.addEventListener('touchend', () => {
-            isDragging = false;
+        modal.addEventListener('touchend', event => {
+            if (!modal.classList.contains('active')) return;
+            // 未缩放时，在灰色区域轻点关闭（未拖动）
+            if (!modalPointerMoved && event.changedTouches.length === 1 && currentScale <= 1.02
+                && Math.abs(translateX) <= 8 && Math.abs(translateY) <= 8) {
+                const t = event.changedTouches[0];
+                const el = document.elementFromPoint(t.clientX, t.clientY);
+                if (el === modal || el === modalLoading) {
+                    closeModal();
+                }
+            }
+            if (event.touches.length === 0) {
+                isDragging = false;
+                clampImageTransform();
+                updateTransform();
+            }
         });
     }
+}
 
-    if (modalImg) {
-        modalImg.addEventListener('mousedown', event => {
-            event.preventDefault();
-            isDragging = true;
-            startX = event.clientX - translateX;
-            startY = event.clientY - translateY;
-        });
+/** 限制位移，保证图片至少有一部分留在视口内，避免拖出后无法再操作 */
+function clampImageTransform() {
+    if (!modalImg) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // 使用布局尺寸 * scale；加载前可能为 0，给兜底
+    const iw = (modalImg.offsetWidth || Math.min(vw * 0.9, 800)) * currentScale;
+    const ih = (modalImg.offsetHeight || Math.min(vh * 0.9, 800)) * currentScale;
+    // 至少保留 edge 像素在屏幕内
+    const edge = 48;
+    const maxX = Math.max(0, (iw / 2) + vw / 2 - edge);
+    const maxY = Math.max(0, (ih / 2) + vh / 2 - edge);
+    translateX = Math.min(maxX, Math.max(-maxX, translateX));
+    translateY = Math.min(maxY, Math.max(-maxY, translateY));
+    if (currentScale <= 1) {
+        // 未放大时尽量回正，减少越界感
+        const soft = 0.35;
+        translateX *= soft;
+        translateY *= soft;
+        if (Math.abs(translateX) < 1) translateX = 0;
+        if (Math.abs(translateY) < 1) translateY = 0;
     }
+}
+
+function resetImageTransform() {
+    currentScale = 1;
+    translateX = 0;
+    translateY = 0;
+    updateTransform();
 }
 
 function detailAddFieldHTML(label, htmlContent) {
@@ -288,12 +367,12 @@ function searchByDetailTag(tag) {
 }
 
 function updateTransform() {
+    if (!modalImg) return;
     modalImg.style.transform = `translate(${translateX}px, ${translateY}px) scale(${currentScale})`;
 }
 
 function openModal(originalUrl) {
-    currentScale = 1; translateX = 0; translateY = 0;
-    updateTransform();
+    resetImageTransform();
     modalLoading.style.display = 'block';
     modalImg.src = '';
     modalImg.src = originalUrl;
@@ -306,7 +385,8 @@ function closeModal() {
     if (!modal.classList.contains('active')) return;
     modal.classList.remove('active');
     modalImg.src = '';
-    currentScale = 1; translateX = 0; translateY = 0;
+    resetImageTransform();
     isDragging = false;
+    modalPointerMoved = false;
     unlockBodyScroll();
 }
