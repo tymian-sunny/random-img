@@ -85,6 +85,11 @@
             </div>
         </div>
         <button id="fetchBtn" onclick="resetAndFetch()">应用配置并刷新</button>
+        <div class="dict-admin-bar source-danbooru" id="dictAdminBar">
+          <span class="dict-admin-label">未翻译标签：<strong id="untranslatedCount">0</strong></span>
+          <button type="button" id="downloadUntranslatedBtn" class="btn-dict-admin" disabled title="下载 JSON，供 translation.py 读取并翻译">下载未翻译 JSON</button>
+          <button type="button" id="clearUntranslatedBtn" class="btn-dict-admin btn-dict-secondary" title="清空本地已收集的未翻译列表">清空</button>
+        </div>
     </div>
     <div class="gallery" id="gallery"></div>
     <div id="loadingStatus" class="loading-status" style="display: none;">正在加载更多图片...</div>

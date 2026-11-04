@@ -23,12 +23,31 @@ window.addEventListener('keydown', event => {
 });
 
 window.addEventListener('scroll', () => {
-    if (isLoading || isShowingFavorites) return;
-    if (document.getElementById('dataSource').value === 'danbooru' && !danbooruHasMore) return;
+    if (isShowingFavorites) return;
+
+    const dataSource = document.getElementById('dataSource').value;
+    const randomEnabled = dataSource === 'danbooru' &&
+                          document.getElementById('danbooru_random').checked;
+
+    // 随机模式用 in-flight 限制，非随机用 isLoading
+    if (randomEnabled) {
+        if (danbooruRandomInFlight >= DANBOORU_RANDOM_MAX_INFLIGHT) return;
+        if (!danbooruHasMore) return;
+    } else {
+        if (isLoading) return;
+        if (dataSource === 'danbooru' && !danbooruHasMore) return;
+    }
+
     const scrollHeight = document.documentElement.scrollHeight;
     const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
     const clientHeight = document.documentElement.clientHeight;
-    if (scrollTop + clientHeight >= scrollHeight - 1000) fetchImages();
+
+    // 提前约 1.8 屏开始加载
+    const threshold = clientHeight * 1.8;
+
+    if (scrollTop + clientHeight >= scrollHeight - threshold) {
+        fetchImages();
+    }
 }, { passive: true });
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -46,9 +65,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     loadSettings();
     checkEasterUnlocked();
     loadFavorites();
+    loadUntranslatedTagsFromStorage();
     await loadTagDictionary();
     initSettingsPersistence();
     initTagAutocomplete();
+    initUntranslatedTagsUI();
     setupColumns(true);
     fetchImages();
 });

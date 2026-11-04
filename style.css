@@ -174,3 +174,30 @@ body[data-source="danbooru"] .source-danbooru { display: flex; }
     .gallery-col { flex: 1 1 0; min-width: 0; max-width: none; gap: 8px; }
     #backToTop { right: 16px; bottom: 16px; }
 }
+/* 词典管理：未翻译标签收集与下载 */
+.dict-admin-bar {
+    display: none;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    background: #f1f5f9;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+    font-size: 13px;
+    color: #475569;
+}
+body[data-source="danbooru"] .dict-admin-bar { display: flex; }
+.dict-admin-label { margin-right: 4px; }
+.dict-admin-label strong { color: #0f172a; }
+.btn-dict-admin {
+    width: auto;
+    margin: 0;
+    padding: 6px 12px;
+    font-size: 13px;
+    background: #0ea5e9;
+}
+.btn-dict-admin:hover { opacity: 0.92; }
+.btn-dict-admin:disabled { background: #cbd5e1; cursor: not-allowed; }
+.btn-dict-secondary { background: #64748b; }

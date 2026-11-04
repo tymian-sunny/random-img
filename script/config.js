@@ -13,9 +13,13 @@ let danbooruSeenIds = new Set();
 let danbooruNoNewPages = 0;
 let danbooruHasMore = true;
 const DANBOORU_MAX_NO_NEW_PAGES = 3;
-const DANBOORU_PAGE_SIZE = 20;
+const DANBOORU_PAGE_SIZE = 10;
 let danbooruEndMessage = '已没有更多符合条件的作品';
 let danbooruRandomFallbackForCurrentQuery = false;
+// 当前正在进行的随机批次数量
+let danbooruRandomInFlight = 0;
+// 最多同时跑几批（建议 2）
+const DANBOORU_RANDOM_MAX_INFLIGHT = 4;
 
 const BASE_COL_WIDTH = 240;
 const GAP = 15;
