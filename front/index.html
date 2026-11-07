@@ -12,7 +12,10 @@
     <div class="panel">
         <div class="panel-header">
             <h2 id="panelTitle">多源图库 API 浏览器</h2>
-            <button id="favPageBtn" class="btn-fav-nav" onclick="toggleFavoritesPage()">查看收藏页</button>
+            <div class="panel-actions">
+                <button id="authLogoutBtn" class="auth-logout-btn" type="button" onclick="logoutFavoriteAccount()" hidden>退出登录</button>
+                <button id="favPageBtn" class="btn-fav-nav" onclick="toggleFavoritesPage()">查看收藏页</button>
+            </div>
         </div>
         <div class="form-grid" id="filterFormGrid">
             <div class="form-group">
@@ -127,6 +130,22 @@
     <span class="modal-close" onclick="closeModal()">&times;</span>
     <span class="loading-text" id="modalLoading">加载原图中...</span>
     <img id="modalImg" src="" alt="Original Image" onload="document.getElementById('modalLoading').style.display='none';">
+</div>
+<div class="auth-overlay" id="authDialog" hidden>
+    <section class="auth-panel" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+        <button class="auth-close" type="button" aria-label="关闭" onclick="closeAuthDialog()">&times;</button>
+        <h2 id="authTitle">收藏账号</h2>
+        <p id="authDescription"></p>
+        <form id="authForm">
+            <label for="authUsername">账号</label>
+            <input id="authUsername" name="username" type="text" autocomplete="username" maxlength="64" required>
+            <label for="authPassword">密码</label>
+            <input id="authPassword" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required>
+            <p class="auth-message" id="authMessage" role="status" aria-live="polite"></p>
+            <button class="auth-submit" id="authSubmitBtn" type="submit">登录并打开收藏</button>
+        </form>
+        <button class="auth-cancel" type="button" onclick="closeAuthDialog()">取消</button>
+    </section>
 </div>
 <button id="backToTop" title="返回顶部" aria-label="返回顶部">↑</button>
 

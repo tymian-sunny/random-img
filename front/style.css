@@ -3,6 +3,7 @@ body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg);
 .container { max-width: 100%; margin: 0 auto; }
 .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; position: relative; }
 .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+.panel-actions { display: flex; align-items: center; gap: 8px; }
 .panel-header h2 { margin: 0; }
 .form-grid {
     display: grid;
@@ -143,6 +144,8 @@ body[data-source="danbooru"] .dict-admin-bar { display: flex; }
 .btn-fav-nav { background: #ff9800; width: auto; padding: 8px 16px; font-size: 14px; margin: 0; display: none; }
 .btn-fav-nav.show { display: inline-block; }
 .btn-fav-nav.active { background: #e65100; }
+.auth-logout-btn { width: auto; margin: 0; padding: 8px 12px; font-size: 13px; background: #586574; }
+.auth-logout-btn[hidden] { display: none; }
 
 .gallery { display: flex; gap: 15px; justify-content: center; transition: transform 0.1s ease-out; }
 .gallery-col { flex: 1; max-width: 240px; display: flex; flex-direction: column; gap: 15px; }
@@ -219,6 +222,8 @@ body[data-source="danbooru"] .dict-admin-bar { display: flex; }
 #modal { z-index: 1200; }
 
 @media (max-width: 760px) {
+    .panel-header { flex-wrap: wrap; gap: 10px; }
+    .panel-actions { margin-left: auto; }
     .detail-modal { padding: 10px; }
     .detail-panel { 
         grid-template-columns: minmax(0,1fr); grid-template-rows: auto auto; 
@@ -232,6 +237,18 @@ body[data-source="danbooru"] .dict-admin-bar { display: flex; }
 }
 
 .loading-status { text-align: center; padding: 20px; color: #666; font-size: 14px; grid-column: 1/-1; width: 100%; box-sizing: border-box; min-width: 0; }
+.auth-overlay { position: fixed; inset: 0; z-index: 1300; display: flex; align-items: center; justify-content: center; padding: 18px; box-sizing: border-box; background: rgba(15, 23, 32, .62); }
+.auth-overlay[hidden] { display: none; }
+.auth-panel { position: relative; width: min(390px, 100%); padding: 28px; box-sizing: border-box; background: #fff; border-top: 4px solid #ff9800; border-radius: 8px; box-shadow: 0 18px 56px rgba(0,0,0,.28); }
+.auth-panel h2 { margin: 0 34px 8px 0; font-size: 22px; color: #263341; }
+.auth-panel > p { margin: 0 0 20px; color: #657384; font-size: 14px; line-height: 1.5; }
+.auth-panel form { display: grid; gap: 8px; }
+.auth-panel label { margin-top: 6px; font-size: 13px; font-weight: 700; }
+.auth-panel input { width: 100%; min-height: 42px; }
+.auth-close { position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; margin: 0; padding: 0; background: transparent; color: #657384; font-size: 26px; line-height: 1; }
+.auth-message { min-height: 20px; margin: 4px 0 0; color: #b42318; font-size: 13px; }
+.auth-submit { margin: 0; background: #d97706; }
+.auth-cancel { margin: 10px 0 0; background: transparent; color: #586574; }
 .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; justify-content: center; align-items: center; overflow: hidden; overscroll-behavior: none; touch-action: none; }
 .modal.active { display: flex; }
 .modal img { max-width: 90vw; max-height: 90vh; object-fit: contain; cursor: grab; user-select: none; -webkit-user-drag: none; transition: transform 0.05s ease-out; touch-action: none; -webkit-user-select: none; }

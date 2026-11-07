@@ -7,18 +7,33 @@ window.addEventListener('resize', () => {
 });
 
 window.addEventListener('mousemove', event => {
-    if (!isDragging) return;
+    if (!isDragging || !modal || !modal.classList.contains('active')) return;
     event.preventDefault();
-    translateX = event.clientX - startX;
-    translateY = event.clientY - startY;
+    const nx = event.clientX - startX;
+    const ny = event.clientY - startY;
+    if (Math.abs(nx - translateX) > 3 || Math.abs(ny - translateY) > 3) {
+        modalPointerMoved = true;
+    }
+    translateX = nx;
+    translateY = ny;
+    if (typeof clampImageTransform === 'function') clampImageTransform();
     updateTransform();
 });
 
-window.addEventListener('mouseup', () => { if (isDragging) isDragging = false; });
+window.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    if (typeof clampImageTransform === 'function') {
+        clampImageTransform();
+        updateTransform();
+    }
+});
 
 window.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
-    if (modal && modal.classList.contains('active')) closeModal();
+    const authDialog = document.getElementById('authDialog');
+    if (authDialog && !authDialog.hidden) closeAuthDialog();
+    else if (modal && modal.classList.contains('active')) closeModal();
     else if (detailModal && detailModal.classList.contains('active')) closeDetail();
 });
 
@@ -51,6 +66,11 @@ window.addEventListener('scroll', () => {
 }, { passive: true });
 
 window.addEventListener('DOMContentLoaded', async () => {
+    document.getElementById('authForm').addEventListener('submit', submitAuthForm);
+    document.getElementById('authDialog').addEventListener('click', event => {
+        if (event.target.id === 'authDialog') closeAuthDialog();
+    });
+
     backToTopButton = document.getElementById('backToTop');
     if (backToTopButton) {
         window.addEventListener('scroll', () => {
@@ -64,7 +84,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     initModalElements();
     loadSettings();
     checkEasterUnlocked();
-    loadFavorites();
+    await loadFavorites();
     loadUntranslatedTagsFromStorage();
     await loadTagDictionary();
     initSettingsPersistence();
